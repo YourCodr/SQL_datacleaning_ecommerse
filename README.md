@@ -1,1 +1,72 @@
 # SQL_datacleaning_ecommerse
+
+-- Cleaning Data in SQL Queries for E-commerce Project
+
+-- Standardize Date Format
+UPDATE ECommerceDB.dbo.Orders
+SET OrderDate = CONVERT(Date, OrderDate);
+
+-- If it doesn't Update properly
+ALTER TABLE ECommerceDB.dbo.Orders
+ADD OrderDateConverted Date;
+
+UPDATE ECommerceDB.dbo.Orders
+SET OrderDateConverted = CONVERT(Date, OrderDate);
+
+-- Populate Customer Address data
+UPDATE o
+SET CustomerAddress = ISNULL(o.CustomerAddress, oc.CustomerAddress)
+FROM ECommerceDB.dbo.Orders o
+JOIN ECommerceDB.dbo.CustomerAddresses oc ON o.CustomerID = oc.CustomerID AND o.[OrderID] <> oc.[OrderID]
+WHERE o.CustomerAddress IS NULL;
+
+-- Breaking out Address into Individual Columns (Address, City, State)
+ALTER TABLE ECommerceDB.dbo.Orders
+ADD CustomerSplitAddress Nvarchar(255);
+
+ALTER TABLE ECommerceDB.dbo.Orders
+ADD CustomerSplitCity Nvarchar(255);
+
+UPDATE ECommerceDB.dbo.Orders
+SET CustomerSplitAddress = SUBSTRING(CustomerAddress, 1, CHARINDEX(',', CustomerAddress) - 1),
+    CustomerSplitCity = SUBSTRING(CustomerAddress, CHARINDEX(',', CustomerAddress) + 1, LEN(CustomerAddress));
+
+-- Breaking out Customer Address into Individual Columns (Address, City, State)
+ALTER TABLE ECommerceDB.dbo.CustomerAddresses
+ADD CustomerSplitAddress Nvarchar(255),
+    CustomerSplitCity Nvarchar(255),
+    CustomerSplitState Nvarchar(255);
+
+UPDATE ECommerceDB.dbo.CustomerAddresses
+SET CustomerSplitAddress = PARSENAME(REPLACE(CustomerAddress, ',', '.'), 3),
+    CustomerSplitCity = PARSENAME(REPLACE(CustomerAddress, ',', '.'), 2),
+    CustomerSplitState = PARSENAME(REPLACE(CustomerAddress, ',', '.'), 1);
+
+-- Change Y and N to Yes and No in "Shipped" field
+UPDATE ECommerceDB.dbo.Orders
+SET ShippedStatus = CASE
+        WHEN ShippedStatus = 'Y' THEN 'Yes'
+        WHEN ShippedStatus = 'N' THEN 'No'
+        ELSE ShippedStatus
+    END;
+
+-- Remove Duplicates
+WITH RowNumCTE AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY OrderID,
+                            CustomerAddress,
+                            OrderTotal,
+                            OrderDate,
+                            ShippingReference
+               ORDER BY
+                   CustomerID
+           ) row_num
+    FROM ECommerceDB.dbo.Orders
+)
+DELETE FROM RowNumCTE
+WHERE row_num > 1;
+
+-- Delete Unused Columns
+ALTER TABLE ECommerceDB.dbo.Orders
+DROP COLUMN BillingAddress, TaxCategory, CustomerAddress, OrderDate;
